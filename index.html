@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DECABO</title>
+<meta name="description" content="Portale interno con procedure operative, strumenti, rubrica collegamenti e tabella PC per il team CRM.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Source+Sans+3:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="masthead">
+  <div class="masthead-inner">
+    <div class="brand">
+      <span class="brand-mark">CRM</span>
+      <h1>DECABO</h1>
+    </div>
+    <div class="search-wrap">
+      <label class="search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path></svg>
+        <input id="filter" type="text" placeholder="Cerca una procedura, uno strumento o un collegamento…" autocomplete="off">
+      </label>
+      <div class="search-results" id="search-results" hidden></div>
+    </div>
+    <button type="button" id="theme-btn" class="theme-btn" aria-label="Cambia tema">🌙</button>
+    <button type="button" id="lock-btn" class="lock-btn" aria-label="Sblocca modifica">⚙</button>
+  </div>
+</div>
+
+<div class="backdrop" id="proc-backdrop" hidden></div>
+
+<div class="modal-overlay" id="pw-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pw-title">
+    <h3 id="pw-title">Sblocca modifica</h3>
+    <p class="modal-copy">Inserisci la password per aggiungere, modificare o collegare procedure e strumenti.</p>
+    <input type="password" id="pw-input" class="pw-input" placeholder="Password" autocomplete="off" inputmode="numeric">
+    <p class="pw-error" id="pw-error" hidden>Password errata, riprova.</p>
+    <div class="modal-actions">
+      <button type="button" id="pw-cancel" class="btn-ghost">Annulla</button>
+      <button type="button" id="pw-submit" class="btn-primary">Sblocca</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="links-overlay" hidden>
+  <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="links-title">
+    <div class="modal-head">
+      <h3 id="links-title">Rubrica collegamenti</h3>
+      <button type="button" class="modal-close" id="links-close" aria-label="Chiudi">×</button>
+    </div>
+    <p class="modal-copy">Clicca un nome per aprire il file o il link collegato.</p>
+
+    <div class="agenda" id="links-agenda">
+      <div class="agenda-index" id="agenda-index"></div>
+      <div class="agenda-list" id="agenda-list"></div>
+    </div>
+
+    <div class="links-edit">
+      <div class="links-list" id="links-list"></div>
+      <div class="links-empty" id="links-empty">Nessun collegamento ancora.</div>
+      <button type="button" class="add-btn" id="add-link">+ Aggiungi</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-value mono" id="stat-proc">0</div>
+      <div class="stat-label">Procedure</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value mono" id="stat-tools">0</div>
+      <div class="stat-label">Strumenti</div>
+    </div>
+    <button type="button" class="stat stat-clickable" id="open-links-btn">
+      <div class="stat-value mono" id="stat-links">0</div>
+      <div class="stat-label">Collegamenti</div>
+    </button>
+    <div class="stat">
+      <div class="stat-value mono" id="stat-updated">—</div>
+      <div class="stat-label">Ultimo aggiornamento</div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <section id="tools-section">
+        <div class="section-head">
+          <h2>Strumenti</h2>
+          <div class="section-head-right">
+            <button type="button" class="add-btn" id="add-tool">+ Aggiungi</button>
+          </div>
+        </div>
+        <div class="tool-grid" id="tool-grid"></div>
+      </section>
+
+      <section id="procedure-section">
+        <div class="section-head">
+          <h2>Procedure operative</h2>
+          <div class="section-head-right">
+            <button type="button" class="page-btn" id="proc-prev" aria-label="Procedure precedenti">‹</button>
+            <span class="page-indicator mono" id="proc-page-indicator">1/1</span>
+            <button type="button" class="page-btn" id="proc-next" aria-label="Procedure successive">›</button>
+            <button type="button" class="add-btn" id="add-proc">+ Aggiungi</button>
+          </div>
+        </div>
+        <div class="proc-list" id="proc-list"></div>
+      </section>
+    </div>
+
+    <div>
+      <section>
+        <div class="section-head">
+          <h2>Contatti</h2>
+          <div class="section-head-right">
+            <button type="button" class="add-btn" id="add-row">+ Aggiungi</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="pc-table">
+            <colgroup>
+              <col style="width:74px">
+              <col>
+              <col>
+              <col style="width:104px">
+              <col style="width:38px">
+            </colgroup>
+            <thead>
+              <tr>
+                <th data-sort="pc">PC <span class="sort-ind"></span></th>
+                <th data-sort="name">Nominativo <span class="sort-ind"></span></th>
+                <th data-sort="email">E-mail <span class="sort-ind"></span></th>
+                <th data-sort="ext">Numero interno <span class="sort-ind"></span></th>
+                <th class="th-actions"></th>
+              </tr>
+            </thead>
+            <tbody id="pc-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="empty" id="empty-state">Nessun risultato per questa ricerca.</div>
+
+  <footer>
+    <span>DECABO · uso interno</span>
+    <span>Per modificare procedure, strumenti e contatti usa l'icona impostazioni in alto a destra.</span>
+  </footer>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

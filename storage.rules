@@ -1,0 +1,12 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Stesso criterio delle regole Firestore: lettura libera, scrittura
+    // solo da chi ha aperto la pagina (login anonimo). Limite di 25 MB
+    // per file per evitare upload accidentali enormi.
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.resource.size < 25 * 1024 * 1024;
+    }
+  }
+}
