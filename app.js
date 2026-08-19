@@ -4,13 +4,11 @@ import {
   query, orderBy, setDoc, serverTimestamp, arrayUnion, arrayRemove
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
-const storage = getStorage(app);
 
 let authUser = null;
 onAuthStateChanged(auth, function (user) { authUser = user; });
@@ -351,18 +349,9 @@ function buildProcCard(p) {
   });
   procBody.appendChild(editor);
 
-  var imageInput = document.createElement("input");
-  imageInput.type = "file";
-  imageInput.className = "word-image-input";
-  imageInput.accept = "image/*";
-  imageInput.hidden = true;
-  imageInput.addEventListener("change", function () { handleImageUpload(p.id, editor, imageInput); });
-  procBody.appendChild(imageInput);
-
-  card._imageInput = imageInput;
   card._editor = editor;
 
-  procBody.appendChild(sectionLabel("File allegati"));
+  procBody.appendChild(sectionLabel("File collegati (link)"));
   var attachList = document.createElement("div");
   attachList.className = "attach-list";
   (p.attachments || []).forEach(function (att) {
@@ -373,15 +362,9 @@ function buildProcCard(p) {
   var addAttachBtn = document.createElement("button");
   addAttachBtn.type = "button";
   addAttachBtn.className = "add-btn";
-  addAttachBtn.textContent = "+ Carica PDF";
-  var attachInput = document.createElement("input");
-  attachInput.type = "file";
-  attachInput.accept = "application/pdf";
-  attachInput.hidden = true;
-  addAttachBtn.addEventListener("click", function () { attachInput.click(); });
-  attachInput.addEventListener("change", function () { handleAttachUpload(p.id, attachInput, attachList); });
+  addAttachBtn.textContent = "+ Aggiungi link file";
+  addAttachBtn.addEventListener("click", function () { addAttachmentLink(p.id); });
   procBody.appendChild(addAttachBtn);
-  procBody.appendChild(attachInput);
 
   card.appendChild(procBody);
 
@@ -442,15 +425,9 @@ function buildWordToolbar(p) {
   var imgBtn = document.createElement("button");
   imgBtn.type = "button";
   imgBtn.className = "word-btn word-insert-image";
-  imgBtn.title = "Inserisci immagine";
+  imgBtn.title = "Inserisci immagine da link";
   imgBtn.textContent = "🖼 Immagine";
-  imgBtn.addEventListener("click", function () {
-    var card = imgBtn.closest(".proc");
-    if (card && card._imageInput) {
-      savedImageRange = getCurrentRange(card._editor);
-      card._imageInput.click();
-    }
-  });
+  imgBtn.addEventListener("click", function () { insertImageByUrl(p.id); });
   bar.appendChild(imgBtn);
   return bar;
 }
@@ -468,35 +445,17 @@ function runCmd(procId, cmd, arg) {
   touchMeta();
 }
 
-var savedImageRange = null;
-function getCurrentRange(editor) {
-  var sel = window.getSelection();
-  if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) return sel.getRangeAt(0).cloneRange();
-  var r = document.createRange();
-  r.selectNodeContents(editor);
-  r.collapse(false);
-  return r;
-}
-
-function handleImageUpload(procId, editor, input) {
-  var file = input.files && input.files[0];
-  input.value = "";
-  if (!file) return;
-  if (!/^image\//.test(file.type)) { alert("Formato non supportato. Scegli un'immagine."); return; }
-  if (file.size > 8 * 1024 * 1024) { alert("Immagine troppo grande (max 8 MB)."); return; }
-  var path = "procedures/" + procId + "/images/" + Date.now() + "-" + file.name;
-  var storageRef = ref(storage, path);
-  uploadBytes(storageRef, file).then(function (snap) {
-    return getDownloadURL(snap.ref);
-  }).then(function (url) {
-    editor.focus();
-    var sel = window.getSelection();
-    sel.removeAllRanges();
-    if (savedImageRange) sel.addRange(savedImageRange);
-    document.execCommand("insertImage", false, url);
-    debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
-    touchMeta();
-  }).catch(function (e) { console.error(e); alert("Caricamento immagine non riuscito."); });
+function insertImageByUrl(procId) {
+  if (!unlocked) return;
+  var card = document.querySelector('.proc[data-id="' + procId + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  var url = prompt("Incolla il link dell'immagine (https://…)");
+  if (!url) return;
+  editor.focus();
+  document.execCommand("insertImage", false, url);
+  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
+  touchMeta();
 }
 
 function buildAttachmentRow(procId, att) {
@@ -504,7 +463,7 @@ function buildAttachmentRow(procId, att) {
   row.className = "attach-row";
   var icon = document.createElement("span");
   icon.className = "attach-icon";
-  icon.textContent = "PDF";
+  icon.textContent = "🔗";
   row.appendChild(icon);
   var link = document.createElement("a");
   link.className = "attach-name";
@@ -521,20 +480,12 @@ function buildAttachmentRow(procId, att) {
   return row;
 }
 
-function handleAttachUpload(procId, input, attachListEl) {
-  var file = input.files && input.files[0];
-  input.value = "";
-  if (!file) return;
-  if (file.type !== "application/pdf") { alert("Formato non supportato. Carica un file PDF."); return; }
-  if (file.size > 15 * 1024 * 1024) { alert("File troppo grande (max 15 MB)."); return; }
-  var path = "procedures/" + procId + "/attachments/" + Date.now() + "-" + file.name;
-  var storageRef = ref(storage, path);
-  uploadBytes(storageRef, file).then(function (snap) {
-    return getDownloadURL(snap.ref);
-  }).then(function (url) {
-    var att = { name: file.name, url: url };
-    return updateDoc(doc(db, "procedures", procId), { attachments: arrayUnion(att) });
-  }).then(touchMeta).catch(function (e) { console.error(e); alert("Caricamento file non riuscito."); });
+function addAttachmentLink(procId) {
+  var name = prompt("Nome del file (es. Manuale.pdf)");
+  if (!name) return;
+  var url = prompt("Link del file (es. link di Google Drive condiviso)");
+  if (!url) return;
+  updateDoc(doc(db, "procedures", procId), { attachments: arrayUnion({ name: name, url: url }) }).then(touchMeta);
 }
 
 function openProcDetail(id) {
@@ -592,61 +543,25 @@ function buildLinkRow(l) {
   nameInput.className += " link-name";
   nameInput.addEventListener("input", function () { debouncedUpdate("links", l.id, "name", nameInput.value); touchMeta(); });
   nameInput.addEventListener("click", function () {
-    if (nameInput.readOnly) {
-      var href = l.fileUrl || l.url;
-      if (href) window.open(href, "_blank", "noopener");
-    }
+    if (nameInput.readOnly && l.url) window.open(l.url, "_blank", "noopener");
   });
   row.appendChild(nameInput);
 
-  var urlInput = fieldInput("url", l.url || "", "Link file Excel/Word (https://…)");
+  var urlInput = fieldInput("url", l.url || "", "Link file (es. Google Drive condiviso)");
   urlInput.className += " link-url";
   urlInput.addEventListener("input", function () { debouncedUpdate("links", l.id, "url", urlInput.value); touchMeta(); });
   row.appendChild(urlInput);
 
-  var uploadBtn = iconButton("📎", "Carica file", "link-upload-btn");
-  var fileInput = document.createElement("input");
-  fileInput.type = "file";
-  fileInput.accept = ".xlsx,.xls,.docx,.doc,.pdf,.ods,.odt";
-  fileInput.hidden = true;
-  uploadBtn.addEventListener("click", function () { fileInput.click(); });
-  fileInput.addEventListener("change", function () { handleLinkFileUpload(l.id, fileInput); });
-  row.appendChild(uploadBtn);
-
   var delBtn = iconButton("×", "Elimina collegamento", "del-btn");
   delBtn.addEventListener("click", function () { if (confirm("Eliminare questo collegamento?")) deleteDoc(doc(db, "links", l.id)).then(touchMeta); });
   row.appendChild(delBtn);
-  row.appendChild(fileInput);
-
-  var badge = document.createElement("span");
-  badge.className = "link-file-badge";
-  if (l.fileName) { badge.setAttribute("data-filename", l.fileName); }
-  row.appendChild(badge);
 
   setReadonly(nameInput, urlInput);
   return row;
 }
 
-function handleLinkFileUpload(linkId, input) {
-  var file = input.files && input.files[0];
-  input.value = "";
-  if (!file) return;
-  if (!/\.(xlsx|xls|docx|doc|pdf|ods|odt)$/i.test(file.name)) {
-    alert("Formato non supportato. Carica Excel, Word, PDF o OpenDocument.");
-    return;
-  }
-  if (file.size > 25 * 1024 * 1024) { alert("File troppo grande (max 25 MB)."); return; }
-  var path = "links/" + linkId + "/" + Date.now() + "-" + file.name;
-  var storageRef = ref(storage, path);
-  uploadBytes(storageRef, file).then(function (snap) {
-    return getDownloadURL(snap.ref);
-  }).then(function (url) {
-    return updateDoc(doc(db, "links", linkId), { fileUrl: url, fileName: file.name });
-  }).then(touchMeta).catch(function (e) { console.error(e); alert("Caricamento file non riuscito."); });
-}
-
 document.getElementById("add-link").addEventListener("click", function () {
-  addDoc(collection(db, "links"), { name: "", url: "", fileUrl: "", fileName: "", order: Date.now() }).then(touchMeta);
+  addDoc(collection(db, "links"), { name: "", url: "", order: Date.now() }).then(touchMeta);
 });
 
 var ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -656,7 +571,7 @@ function renderLinksAgenda() {
   var agendaList = document.getElementById("agenda-list");
   var entries = links
     .filter(function (l) { return l.name; })
-    .map(function (l) { return { name: l.name, url: l.fileUrl || l.url }; });
+    .map(function (l) { return { name: l.name, url: l.url }; });
   entries.sort(function (a, b) { return a.name.localeCompare(b.name, "it", { sensitivity: "base" }); });
 
   var groups = {};
@@ -794,7 +709,7 @@ function renderSearchResults(q) {
   label.textContent = "Collegamenti";
   searchResults.appendChild(label);
   matches.forEach(function (m) {
-    var href = m.fileUrl || m.url;
+    var href = m.url;
     var el = document.createElement(href ? "a" : "div");
     el.className = "search-result";
     if (href) { el.href = href; el.target = "_blank"; el.rel = "noopener"; }
