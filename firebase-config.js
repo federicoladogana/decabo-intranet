@@ -2,10 +2,10 @@
 // Li trovi in: Console Firebase -> icona ingranaggio -> Impostazioni progetto
 // -> scorri fino a "Le tue app" -> app web -> "Configurazione SDK".
 export const firebaseConfig = {
-  apiKey: "INCOLLA_QUI_apiKey",
-  authDomain: "INCOLLA_QUI_authDomain",
-  projectId: "INCOLLA_QUI_projectId",
-  storageBucket: "INCOLLA_QUI_storageBucket",
-  messagingSenderId: "INCOLLA_QUI_messagingSenderId",
-  appId: "INCOLLA_QUI_appId"
+  apiKey: "AIzaSyDk•••••••••••••••••••••••••••••••",
+  authDomain: "decabo-ser.firebaseapp.com",
+  projectId: "decabo-ser",
+  storageBucket: "decabo-ser.firebasestorage.app",
+  messagingSenderId: "1009595531393",
+  appId: "1:1009595531393:web:b8db962a9f9c0ef9514d80"
 };
