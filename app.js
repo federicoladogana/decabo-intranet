@@ -366,6 +366,28 @@ function buildProcCard(p) {
   addAttachBtn.addEventListener("click", function () { addAttachmentLink(p.id); });
   procBody.appendChild(addAttachBtn);
 
+  var quickLinkSelect = document.createElement("select");
+  quickLinkSelect.className = "word-select proc-quicklink-select";
+  var quickPlaceholder = document.createElement("option");
+  quickPlaceholder.value = "";
+  quickPlaceholder.textContent = "+ Collega dalla rubrica…";
+  quickLinkSelect.appendChild(quickPlaceholder);
+  links.forEach(function (l) {
+    if (!l.name || !l.url) return;
+    var opt = document.createElement("option");
+    opt.value = l.id;
+    opt.textContent = linkTypeInfo(l.type).icon + " " + l.name;
+    quickLinkSelect.appendChild(opt);
+  });
+  quickLinkSelect.addEventListener("change", function () {
+    var chosenId = quickLinkSelect.value;
+    quickLinkSelect.value = "";
+    var chosen = links.find(function (l) { return l.id === chosenId; });
+    if (!chosen) return;
+    updateDoc(doc(db, "procedures", p.id), { attachments: arrayUnion({ name: chosen.name, url: chosen.url }) }).then(touchMeta);
+  });
+  procBody.appendChild(quickLinkSelect);
+
   card.appendChild(procBody);
 
   setReadonly(titleInput, descInput, deptInput, revInput, extLinkInput);
@@ -536,9 +558,33 @@ function renderLinksList() {
   links.forEach(function (l) { listEl.appendChild(buildLinkRow(l)); });
 }
 
+var LINK_TYPES = [
+  { value: "sito", label: "Sito web", icon: "🌐", placeholder: "Indirizzo del sito (https://…)" },
+  { value: "link", label: "Link", icon: "🔗", placeholder: "Indirizzo (https://…)" },
+  { value: "file", label: "Collegamento a file", icon: "📁", placeholder: "Link al file (es. Google Drive condiviso)" }
+];
+function linkTypeInfo(value) {
+  for (var i = 0; i < LINK_TYPES.length; i++) { if (LINK_TYPES[i].value === value) return LINK_TYPES[i]; }
+  return LINK_TYPES[1];
+}
+
 function buildLinkRow(l) {
   var row = document.createElement("div");
   row.className = "link-row";
+
+  var typeIcon = document.createElement("span");
+  typeIcon.className = "link-type-icon";
+  row.appendChild(typeIcon);
+
+  var typeSelect = document.createElement("select");
+  typeSelect.className = "link-type";
+  LINK_TYPES.forEach(function (t) {
+    var opt = document.createElement("option");
+    opt.value = t.value;
+    opt.textContent = t.label;
+    typeSelect.appendChild(opt);
+  });
+
   var nameInput = fieldInput("text", l.name || "", "Nome");
   nameInput.className += " link-name";
   nameInput.addEventListener("input", function () { debouncedUpdate("links", l.id, "name", nameInput.value); touchMeta(); });
@@ -547,21 +593,42 @@ function buildLinkRow(l) {
   });
   row.appendChild(nameInput);
 
-  var urlInput = fieldInput("url", l.url || "", "Link file (es. Google Drive condiviso)");
+  var urlInput = fieldInput("url", l.url || "", "");
   urlInput.className += " link-url";
   urlInput.addEventListener("input", function () { debouncedUpdate("links", l.id, "url", urlInput.value); touchMeta(); });
   row.appendChild(urlInput);
 
+  var hint = document.createElement("div");
+  hint.className = "link-hint";
+  hint.textContent = "Suggerimento: carica il file su Google Drive (o simile) → tasto destro → Condividi → Copia link, e incollalo qui sopra.";
+
+  function applyType(value) {
+    var info = linkTypeInfo(value);
+    typeIcon.textContent = info.icon;
+    urlInput.placeholder = info.placeholder;
+    hint.classList.toggle("is-visible", value === "file" && unlocked);
+  }
+
+  typeSelect.value = l.type || "link";
+  applyType(typeSelect.value);
+  typeSelect.addEventListener("change", function () {
+    debouncedUpdate("links", l.id, "type", typeSelect.value, 0);
+    touchMeta();
+    applyType(typeSelect.value);
+  });
+  row.insertBefore(typeSelect, nameInput);
+
   var delBtn = iconButton("×", "Elimina collegamento", "del-btn");
   delBtn.addEventListener("click", function () { if (confirm("Eliminare questo collegamento?")) deleteDoc(doc(db, "links", l.id)).then(touchMeta); });
   row.appendChild(delBtn);
+  row.appendChild(hint);
 
   setReadonly(nameInput, urlInput);
   return row;
 }
 
 document.getElementById("add-link").addEventListener("click", function () {
-  addDoc(collection(db, "links"), { name: "", url: "", order: Date.now() }).then(touchMeta);
+  addDoc(collection(db, "links"), { name: "", url: "", type: "link", order: Date.now() }).then(touchMeta);
 });
 
 var ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -571,7 +638,7 @@ function renderLinksAgenda() {
   var agendaList = document.getElementById("agenda-list");
   var entries = links
     .filter(function (l) { return l.name; })
-    .map(function (l) { return { name: l.name, url: l.url }; });
+    .map(function (l) { return { name: l.name, url: l.url, type: l.type }; });
   entries.sort(function (a, b) { return a.name.localeCompare(b.name, "it", { sensitivity: "base" }); });
 
   var groups = {};
@@ -621,6 +688,9 @@ function renderLinksAgenda() {
       var el = document.createElement(e.url ? "a" : "div");
       el.className = "agenda-entry";
       if (e.url) { el.href = e.url; el.target = "_blank"; el.rel = "noopener"; }
+      var iconSpan = document.createElement("span");
+      iconSpan.textContent = linkTypeInfo(e.type).icon + " ";
+      el.appendChild(iconSpan);
       var nameSpan = document.createElement("span");
       nameSpan.className = "agenda-entry-name";
       nameSpan.textContent = e.name;
