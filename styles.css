@@ -502,6 +502,12 @@
     body.printing-proc {
       background: #ffffff !important;
     }
+
+    body.printing-form * { visibility: hidden; }
+
+    body.printing-form {
+      background: #ffffff !important;
+    }
   }
 
   .proc-top {
@@ -610,6 +616,16 @@
     font-family: inherit;
   }
 
+  .word-color {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+  }
+
   .word-sep {
     width: 1px;
     height: 18px;
@@ -651,7 +667,30 @@
     height: auto;
     border-radius: 4px;
     margin: 8px 0;
+    cursor: pointer;
   }
+
+  .word-page img.img-sm { width: 200px; }
+  .word-page img.img-md { width: 420px; }
+  .word-page img.img-lg { width: 100%; }
+  .word-page img.img-left { float: left; display: inline; margin: 4px 14px 8px 0; }
+  .word-page img.img-center { display: block; margin: 8px auto; float: none; }
+  .word-page img.img-right { float: right; display: inline; margin: 4px 0 8px 14px; }
+
+  .word-page table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 10px 0;
+  }
+
+  .word-page table td,
+  .word-page table th {
+    border: 1px solid #ccc;
+    padding: 6px 8px;
+    vertical-align: top;
+  }
+
+  .word-page a { color: #0b6e8c; }
 
   .attach-list {
     display: flex;
@@ -712,6 +751,100 @@
     color: var(--ink-faint);
     font-style: italic;
   }
+
+  /* ---- Moduli ---- */
+  .form-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .form-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .form-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+
+  .form-card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+  }
+
+  .form-title {
+    font-weight: 600;
+    font-size: 15px;
+    flex: 1;
+  }
+
+  .form-card-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .form-print-btn {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--ink-muted);
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .form-print-btn:hover { background: var(--accent-soft); color: var(--accent-strong); }
+
+  .form-fields {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .form-card.is-expanded .form-fields { display: flex; }
+  .form-card.is-expanded .form-add-field { display: inline-block; margin-top: 10px; }
+  .form-add-field { display: none; }
+
+  .form-field-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .form-field-label {
+    flex: 1 1 40%;
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .form-field-value {
+    flex: 1 1 45%;
+    font-size: 13px;
+  }
+
+  .form-field-type {
+    flex: none;
+    width: 90px;
+    height: 26px;
+    font-size: 11px;
+  }
+
+  body:not(.edit-unlocked) .form-field-type { display: none; }
 
   .chip {
     font-family: "IBM Plex Mono", monospace;
