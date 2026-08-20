@@ -1,5 +1,4 @@
-
-  :root {
+:root {
     --bg: #eef2f2;
     --surface: #ffffff;
     --surface-2: #f6f9f8;
@@ -575,6 +574,14 @@
 
   body.edit-unlocked .word-toolbar { display: flex; }
 
+  .proc-quicklink-select {
+    display: none;
+    margin-top: 8px;
+    max-width: 260px;
+  }
+
+  body.edit-unlocked .proc-quicklink-select { display: inline-block; }
+
   .word-btn {
     flex: none;
     min-width: 26px;
@@ -1037,6 +1044,37 @@
     font-size: 11px;
     color: var(--accent-strong);
   }
+
+  .link-type-icon {
+    flex: none;
+    font-size: 14px;
+    width: 18px;
+    text-align: center;
+  }
+
+  .link-type {
+    flex: none;
+    width: 150px;
+    font-size: 11px;
+    padding: 5px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink);
+    font-family: inherit;
+  }
+
+  body:not(.edit-unlocked) .link-type { display: none; }
+
+  .link-hint {
+    display: none;
+    flex-basis: 100%;
+    font-size: 11px;
+    color: var(--ink-faint);
+    line-height: 1.4;
+  }
+
+  .link-hint.is-visible { display: block; }
 
   .link-file-badge[data-filename]:not([data-filename=""]) { display: block; }
   .link-file-badge[data-filename]:not([data-filename=""])::before { content: "📎 " attr(data-filename); }
