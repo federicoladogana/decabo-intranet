@@ -20,6 +20,7 @@ let unlocked = false;
 let procedures = [];
 let tools = [];
 let links = [];
+let forms = [];
 let pcRows = [];
 let procPage = 0;
 const PROC_PAGE_SIZE = 3;
@@ -67,6 +68,12 @@ onSnapshot(query(collection(db, "links"), orderBy("order")), function (snap) {
   updateStats();
 });
 
+onSnapshot(query(collection(db, "forms"), orderBy("order")), function (snap) {
+  forms = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+  renderForms();
+  updateStats();
+});
+
 onSnapshot(query(collection(db, "pcRows"), orderBy("order")), function (snap) {
   pcRows = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
   renderPcTable();
@@ -85,6 +92,7 @@ function updateStats() {
   document.getElementById("stat-proc").textContent = procedures.length;
   document.getElementById("stat-tools").textContent = tools.length;
   document.getElementById("stat-links").textContent = links.length;
+  document.getElementById("stat-forms").textContent = forms.length;
 }
 
 function isEditingWithin(container) {
@@ -347,6 +355,9 @@ function buildProcCard(p) {
     debouncedUpdate("procedures", p.id, "bodyHtml", editor.innerHTML, 700);
     touchMeta();
   });
+  editor.addEventListener("click", function (e) {
+    if (e.target.tagName === "IMG") selectedImage = e.target;
+  });
   procBody.appendChild(editor);
 
   card._editor = editor;
@@ -451,7 +462,158 @@ function buildWordToolbar(p) {
   imgBtn.textContent = "🖼 Immagine";
   imgBtn.addEventListener("click", function () { insertImageByUrl(p.id); });
   bar.appendChild(imgBtn);
+  bar.appendChild(sep());
+
+  var colorInput = document.createElement("input");
+  colorInput.type = "color";
+  colorInput.className = "word-color";
+  colorInput.title = "Colore testo";
+  colorInput.value = "#1a1a1a";
+  colorInput.addEventListener("input", function () { applyTextColor(p.id, colorInput.value); });
+  bar.appendChild(colorInput);
+
+  var highlightInput = document.createElement("input");
+  highlightInput.type = "color";
+  highlightInput.className = "word-color";
+  highlightInput.title = "Evidenziatore";
+  highlightInput.value = "#fff59d";
+  highlightInput.addEventListener("input", function () { applyHighlight(p.id, highlightInput.value); });
+  bar.appendChild(highlightInput);
+  bar.appendChild(sep());
+
+  var tableBtn = document.createElement("button");
+  tableBtn.type = "button";
+  tableBtn.className = "word-btn";
+  tableBtn.title = "Inserisci tabella";
+  tableBtn.textContent = "▦ Tabella";
+  tableBtn.addEventListener("click", function () { insertTable(p.id); });
+  bar.appendChild(tableBtn);
+  bar.appendChild(sep());
+
+  var linkBtn = document.createElement("button");
+  linkBtn.type = "button";
+  linkBtn.className = "word-btn";
+  linkBtn.title = "Trasforma il testo selezionato in un link";
+  linkBtn.textContent = "🔗 Link";
+  linkBtn.addEventListener("click", function () { insertTextLink(p.id); });
+  bar.appendChild(linkBtn);
+
+  var unlinkBtn = document.createElement("button");
+  unlinkBtn.type = "button";
+  unlinkBtn.className = "word-btn";
+  unlinkBtn.title = "Rimuovi il link dal testo selezionato";
+  unlinkBtn.textContent = "🚫 Link";
+  unlinkBtn.addEventListener("click", function () { removeTextLink(p.id); });
+  bar.appendChild(unlinkBtn);
+  bar.appendChild(sep());
+
+  [["img-sm", "Immagine piccola", "S"], ["img-md", "Immagine media", "M"], ["img-lg", "Immagine grande", "L"]].forEach(function (c) {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "word-btn"; b.title = c[1]; b.textContent = c[2];
+    b.addEventListener("click", function () { setImageSize(c[0]); });
+    bar.appendChild(b);
+  });
+  [["img-left", "Immagine a sinistra", "◧"], ["img-center", "Immagine al centro", "▣"], ["img-right", "Immagine a destra", "◨"]].forEach(function (c) {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "word-btn"; b.title = c[1]; b.textContent = c[2];
+    b.addEventListener("click", function () { setImageAlign(c[0]); });
+    bar.appendChild(b);
+  });
+
   return bar;
+}
+
+var selectedImage = null;
+
+function applyTextColor(procId, color) {
+  if (!unlocked) return;
+  var card = document.querySelector('.proc[data-id="' + procId + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  editor.focus();
+  document.execCommand("foreColor", false, color);
+  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
+  touchMeta();
+}
+
+function applyHighlight(procId, color) {
+  if (!unlocked) return;
+  var card = document.querySelector('.proc[data-id="' + procId + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  editor.focus();
+  if (!document.execCommand("hiliteColor", false, color)) document.execCommand("backColor", false, color);
+  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
+  touchMeta();
+}
+
+function insertTable(procId) {
+  if (!unlocked) return;
+  var card = document.querySelector('.proc[data-id="' + procId + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  var rows = parseInt(prompt("Quante righe?", "3"), 10);
+  var cols = parseInt(prompt("Quante colonne?", "3"), 10);
+  if (!rows || !cols || rows < 1 || cols < 1) return;
+  var html = "<table>";
+  for (var r = 0; r < rows; r++) {
+    html += "<tr>";
+    for (var c = 0; c < cols; c++) html += "<td>&nbsp;</td>";
+    html += "</tr>";
+  }
+  html += "</table><p><br></p>";
+  editor.focus();
+  document.execCommand("insertHTML", false, html);
+  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
+  touchMeta();
+}
+
+function insertTextLink(procId) {
+  if (!unlocked) return;
+  var card = document.querySelector('.proc[data-id="' + procId + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  var url = prompt("Seleziona prima il testo nel documento, poi incolla qui l'indirizzo del link (https://…)");
+  if (!url) return;
+  editor.focus();
+  document.execCommand("createLink", false, url);
+  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
+  touchMeta();
+}
+
+function removeTextLink(procId) {
+  if (!unlocked) return;
+  var card = document.querySelector('.proc[data-id="' + procId + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  editor.focus();
+  document.execCommand("unlink", false, null);
+  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
+  touchMeta();
+}
+
+function setImageSize(cls) {
+  if (!unlocked || !selectedImage || !selectedImage.isConnected) { alert("Clicca prima su un'immagine dentro il testo della procedura."); return; }
+  selectedImage.classList.remove("img-sm", "img-md", "img-lg");
+  selectedImage.classList.add(cls);
+  saveImageChange();
+}
+
+function setImageAlign(cls) {
+  if (!unlocked || !selectedImage || !selectedImage.isConnected) { alert("Clicca prima su un'immagine dentro il testo della procedura."); return; }
+  selectedImage.classList.remove("img-left", "img-center", "img-right");
+  selectedImage.classList.add(cls);
+  saveImageChange();
+}
+
+function saveImageChange() {
+  var editor = selectedImage.closest(".word-page");
+  if (!editor) return;
+  var card = editor.closest(".proc");
+  var procId = card && card.dataset.id;
+  if (!procId) return;
+  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
+  touchMeta();
 }
 
 function sep() { var s = document.createElement("span"); s.className = "word-sep"; return s; }
@@ -712,6 +874,175 @@ document.getElementById("open-links-btn").addEventListener("click", function () 
 document.getElementById("links-close").addEventListener("click", function () { linksOverlay.hidden = true; });
 linksOverlay.addEventListener("click", function (e) { if (e.target === linksOverlay) linksOverlay.hidden = true; });
 
+/* ---------------- Moduli ---------------- */
+
+var expandedFormId = null;
+
+function renderForms() {
+  var list = document.getElementById("form-list");
+  if (isEditingWithin(list)) return;
+  list.innerHTML = "";
+  forms.forEach(function (f) { list.appendChild(buildFormCard(f)); });
+}
+
+function buildFormCard(f) {
+  var card = document.createElement("div");
+  card.className = "form-card" + (expandedFormId === f.id ? " is-expanded" : "");
+  card.dataset.id = f.id;
+
+  var head = document.createElement("div");
+  head.className = "form-card-head";
+  head.addEventListener("click", function (e) {
+    if (e.target.closest(".icon-btn, .field, .form-print-btn")) return;
+    expandedFormId = expandedFormId === f.id ? null : f.id;
+    renderForms();
+  });
+
+  var titleInput = fieldInput("text", f.title || "", "Titolo modulo");
+  titleInput.className += " form-title";
+  titleInput.addEventListener("input", function () { debouncedUpdate("forms", f.id, "title", titleInput.value); touchMeta(); });
+  head.appendChild(titleInput);
+
+  var actions = document.createElement("span");
+  actions.className = "form-card-actions";
+
+  var printBtn = document.createElement("button");
+  printBtn.type = "button";
+  printBtn.className = "form-print-btn";
+  printBtn.setAttribute("aria-label", "Stampa modulo");
+  printBtn.textContent = "🖨";
+  printBtn.addEventListener("click", function (e) { e.stopPropagation(); printForm(card); });
+  actions.appendChild(printBtn);
+
+  var delBtn = iconButton("×", "Elimina modulo", "del-btn");
+  delBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (confirm("Eliminare questo modulo?")) deleteDoc(doc(db, "forms", f.id)).then(touchMeta);
+  });
+  actions.appendChild(delBtn);
+  head.appendChild(actions);
+
+  card.appendChild(head);
+
+  var fieldsWrap = document.createElement("div");
+  fieldsWrap.className = "form-fields";
+  (f.fields || []).forEach(function (field, idx) {
+    fieldsWrap.appendChild(buildFormFieldRow(f, idx, field));
+  });
+  card.appendChild(fieldsWrap);
+
+  var addFieldBtn = document.createElement("button");
+  addFieldBtn.type = "button";
+  addFieldBtn.className = "add-btn form-add-field";
+  addFieldBtn.textContent = "+ Aggiungi campo";
+  addFieldBtn.addEventListener("click", function () {
+    var newFields = (f.fields || []).concat([{ label: "", value: "", type: "text" }]);
+    updateDoc(doc(db, "forms", f.id), { fields: newFields }).then(touchMeta);
+  });
+  card.appendChild(addFieldBtn);
+
+  setReadonly(titleInput);
+  return card;
+}
+
+function buildFormFieldRow(f, idx, field) {
+  var row = document.createElement("div");
+  row.className = "form-field-row";
+
+  var labelInput = fieldInput("text", field.label || "", "Nome campo");
+  labelInput.className += " form-field-label";
+  labelInput.addEventListener("input", function () { updateFormField(f, idx, "label", labelInput.value); });
+  row.appendChild(labelInput);
+
+  var toLock = [labelInput];
+
+  if (field.type === "check") {
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip " + (field.value === "si" ? "chip-ok" : "chip-crit");
+    chip.textContent = field.value === "si" ? "Sì" : "No";
+    chip.addEventListener("click", function () {
+      if (!unlocked) return;
+      updateFormField(f, idx, "value", field.value === "si" ? "no" : "si");
+    });
+    row.appendChild(chip);
+  } else {
+    var valueInput = fieldInput("text", field.value || "", "Valore");
+    valueInput.className += " form-field-value";
+    valueInput.addEventListener("input", function () { updateFormField(f, idx, "value", valueInput.value); });
+    row.appendChild(valueInput);
+    toLock.push(valueInput);
+  }
+
+  var typeSelect = document.createElement("select");
+  typeSelect.className = "word-select form-field-type";
+  [["text", "Testo"], ["check", "Sì/No"]].forEach(function (t) {
+    var opt = document.createElement("option");
+    opt.value = t[0]; opt.textContent = t[1];
+    typeSelect.appendChild(opt);
+  });
+  typeSelect.value = field.type || "text";
+  typeSelect.addEventListener("change", function () { updateFormField(f, idx, "type", typeSelect.value); });
+  row.appendChild(typeSelect);
+
+  var delFieldBtn = iconButton("×", "Rimuovi campo", "del-btn");
+  delFieldBtn.addEventListener("click", function () {
+    var newFields = (f.fields || []).slice();
+    newFields.splice(idx, 1);
+    updateDoc(doc(db, "forms", f.id), { fields: newFields }).then(touchMeta);
+  });
+  row.appendChild(delFieldBtn);
+
+  setReadonly.apply(null, toLock);
+  return row;
+}
+
+var formFieldSaveTimers = new Map();
+function updateFormField(f, idx, key, value) {
+  var newFields = (f.fields || []).slice();
+  newFields[idx] = Object.assign({}, newFields[idx]);
+  newFields[idx][key] = value;
+  var timerKey = "forms/" + f.id + "/fields";
+  clearTimeout(formFieldSaveTimers.get(timerKey));
+  var t = setTimeout(function () {
+    updateDoc(doc(db, "forms", f.id), { fields: newFields }).then(touchMeta).catch(function (e) { console.error(e); });
+  }, key === "value" ? 400 : 0);
+  formFieldSaveTimers.set(timerKey, t);
+}
+
+var formPrintStyleTag = null;
+function printForm(card) {
+  var siblings = Array.prototype.slice.call(card.parentElement.children);
+  var idx = siblings.indexOf(card) + 1;
+  var sel = "body.printing-form .form-list > .form-card:nth-child(" + idx + ")";
+  if (!formPrintStyleTag) { formPrintStyleTag = document.createElement("style"); document.head.appendChild(formPrintStyleTag); }
+  formPrintStyleTag.textContent =
+    "@media print {" +
+    sel + ", " + sel + " * { visibility: visible !important; }" +
+    sel + " { position: absolute !important; top:0 !important; left:0 !important; width:100% !important; max-width:none !important; background:#fff !important; color:#1a1a1a !important; border:none !important; box-shadow:none !important; padding:0 !important; }" +
+    sel + " .form-fields { display: flex !important; border-top:none !important; margin-top:14px !important; padding-top:0 !important; }" +
+    sel + " .icon-btn, " + sel + " .add-btn, " + sel + " .form-print-btn, " + sel + " .form-field-type { display:none !important; }" +
+    "}";
+  document.body.classList.add("printing-form");
+  setTimeout(function () { window.print(); }, 50);
+}
+window.addEventListener("afterprint", function () { document.body.classList.remove("printing-form"); });
+
+document.getElementById("add-form").addEventListener("click", function () {
+  addDoc(collection(db, "forms"), {
+    title: "Nuovo modulo",
+    fields: [
+      { label: "Data", value: "", type: "text" },
+      { label: "Condominio / Indirizzo", value: "", type: "text" },
+      { label: "Amministratore", value: "", type: "text" },
+      { label: "Tipo contratto", value: "", type: "text" },
+      { label: "Partita IVA", value: "", type: "text" },
+      { label: "Inserimento avvenuto", value: "no", type: "check" }
+    ],
+    order: Date.now()
+  }).then(touchMeta);
+});
+
 /* ---------------- Tabella PC ---------------- */
 
 function renderPcTable() {
@@ -845,6 +1176,7 @@ function setEditMode(on) {
   renderTools();
   renderProceduresForce();
   renderLinksList();
+  renderForms();
   renderPcTable();
 }
 
