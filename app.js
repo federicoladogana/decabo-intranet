@@ -4,11 +4,13 @@ import {
   query, orderBy, setDoc, serverTimestamp, arrayUnion, arrayRemove
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
+const storage = getStorage(app);
 
 let authUser = null;
 onAuthStateChanged(auth, function (user) { authUser = user; });
@@ -352,13 +354,19 @@ function buildProcCard(p) {
   editor.contentEditable = unlocked ? "true" : "false";
   editor.innerHTML = p.bodyHtml || "";
   editor.addEventListener("input", function () {
-    debouncedUpdate("procedures", p.id, "bodyHtml", editor.innerHTML, 700);
-    touchMeta();
+    saveBody(p.id, editor, 700);
+    updateWordCount(editor, wordCountEl);
   });
   editor.addEventListener("click", function (e) {
-    if (e.target.tagName === "IMG") selectedImage = e.target;
+    if (e.target.tagName === "IMG") selectImage(e.target); else deselectImage();
   });
+  editor.addEventListener("keyup", function () { updateWordCount(editor, wordCountEl); });
   procBody.appendChild(editor);
+
+  var wordCountEl = document.createElement("div");
+  wordCountEl.className = "word-count";
+  procBody.appendChild(wordCountEl);
+  updateWordCount(editor, wordCountEl);
 
   card._editor = editor;
 
@@ -408,60 +416,64 @@ function buildProcCard(p) {
 function textNode(s) { var span = document.createElement("span"); span.textContent = s; return span; }
 function sectionLabel(s) { var d = document.createElement("div"); d.className = "detail-section-label"; d.textContent = s; return d; }
 
+function wordBtn(bar, label, title, handler, extraClass) {
+  var b = document.createElement("button");
+  b.type = "button";
+  b.className = "word-btn" + (extraClass ? " " + extraClass : "");
+  b.title = title;
+  b.innerHTML = label;
+  b.addEventListener("click", handler);
+  bar.appendChild(b);
+  return b;
+}
+
 function buildWordToolbar(p) {
   var bar = document.createElement("div");
   bar.className = "word-toolbar";
-  var cmds = [
-    ["bold", "Grassetto", "B"], ["italic", "Corsivo", "I"], ["underline", "Sottolineato", "S"]
-  ];
-  cmds.forEach(function (c) {
-    var b = document.createElement("button");
-    b.type = "button";
-    b.className = "word-btn";
-    b.title = c[1];
-    b.innerHTML = "<" + (c[0] === "bold" ? "b" : c[0] === "italic" ? "i" : "u") + ">" + c[2] + "</" + (c[0] === "bold" ? "b" : c[0] === "italic" ? "i" : "u") + ">";
-    b.addEventListener("click", function () { runCmd(p.id, c[0]); });
-    bar.appendChild(b);
+
+  /* Annulla / Ripeti */
+  wordBtn(bar, "↺", "Annulla", function () { runCmd(p.id, "undo"); });
+  wordBtn(bar, "↻", "Ripeti", function () { runCmd(p.id, "redo"); });
+  bar.appendChild(sep());
+
+  /* Stile paragrafo */
+  var styleSelect = document.createElement("select");
+  styleSelect.className = "word-select";
+  styleSelect.title = "Stile paragrafo";
+  [["<p>", "Paragrafo"], ["<h1>", "Titolo 1"], ["<h2>", "Titolo 2"], ["<h3>", "Titolo 3"], ["<h4>", "Titolo 4"], ["<blockquote>", "Citazione"]].forEach(function (o) {
+    var opt = document.createElement("option"); opt.value = o[0]; opt.textContent = o[1]; styleSelect.appendChild(opt);
   });
-  bar.appendChild(sep());
-  var select = document.createElement("select");
-  select.className = "word-select";
-  select.title = "Stile paragrafo";
-  var optP = document.createElement("option"); optP.value = "<p>"; optP.textContent = "Paragrafo"; select.appendChild(optP);
-  var optH = document.createElement("option"); optH.value = "<h3>"; optH.textContent = "Titolo"; select.appendChild(optH);
-  select.addEventListener("change", function () { runCmd(p.id, "formatBlock", select.value); });
-  bar.appendChild(select);
-  bar.appendChild(sep());
-  var listCmds = [["insertUnorderedList", "Elenco puntato", "☰•"], ["insertOrderedList", "Elenco numerato", "☰1"]];
-  listCmds.forEach(function (c) {
-    var b = document.createElement("button");
-    b.type = "button"; b.className = "word-btn"; b.title = c[1]; b.textContent = c[2];
-    b.addEventListener("click", function () { runCmd(p.id, c[0]); });
-    bar.appendChild(b);
+  styleSelect.addEventListener("change", function () { runCmd(p.id, "formatBlock", styleSelect.value); styleSelect.value = "<p>"; });
+  bar.appendChild(styleSelect);
+
+  /* Font e dimensione */
+  var fontSelect = document.createElement("select");
+  fontSelect.className = "word-select word-font";
+  fontSelect.title = "Carattere";
+  [["Source Sans 3, Calibri, sans-serif", "Source Sans 3"], ["Arial, sans-serif", "Arial"], ["Georgia, serif", "Georgia"], ["'Times New Roman', serif", "Times New Roman"], ["'IBM Plex Mono', monospace", "Monospace"]].forEach(function (o) {
+    var opt = document.createElement("option"); opt.value = o[0]; opt.textContent = o[1]; fontSelect.appendChild(opt);
   });
-  bar.appendChild(sep());
-  var alignCmds = [["justifyLeft", "Allinea a sinistra", "◧"], ["justifyCenter", "Allinea al centro", "▣"], ["justifyRight", "Allinea a destra", "◨"]];
-  alignCmds.forEach(function (c) {
-    var b = document.createElement("button");
-    b.type = "button"; b.className = "word-btn"; b.title = c[1]; b.textContent = c[2];
-    b.addEventListener("click", function () { runCmd(p.id, c[0]); });
-    bar.appendChild(b);
+  fontSelect.addEventListener("change", function () { runCmd(p.id, "fontName", fontSelect.value); });
+  bar.appendChild(fontSelect);
+
+  var sizeSelect = document.createElement("select");
+  sizeSelect.className = "word-select word-size";
+  sizeSelect.title = "Dimensione testo";
+  [["2", "Piccolo"], ["3", "Normale"], ["4", "Medio"], ["5", "Grande"], ["6", "Molto grande"], ["7", "Titolo"]].forEach(function (o) {
+    var opt = document.createElement("option"); opt.value = o[0]; opt.textContent = o[1]; sizeSelect.appendChild(opt);
   });
+  sizeSelect.value = "3";
+  sizeSelect.addEventListener("change", function () { runCmd(p.id, "fontSize", sizeSelect.value); });
+  bar.appendChild(sizeSelect);
   bar.appendChild(sep());
-  [["undo", "Annulla", "↺"], ["redo", "Ripeti", "↻"]].forEach(function (c) {
-    var b = document.createElement("button");
-    b.type = "button"; b.className = "word-btn"; b.title = c[1]; b.textContent = c[2];
-    b.addEventListener("click", function () { runCmd(p.id, c[0]); });
-    bar.appendChild(b);
-  });
-  bar.appendChild(sep());
-  var imgBtn = document.createElement("button");
-  imgBtn.type = "button";
-  imgBtn.className = "word-btn word-insert-image";
-  imgBtn.title = "Inserisci immagine da link";
-  imgBtn.textContent = "🖼 Immagine";
-  imgBtn.addEventListener("click", function () { insertImageByUrl(p.id); });
-  bar.appendChild(imgBtn);
+
+  /* Formattazione carattere */
+  wordBtn(bar, "<b>B</b>", "Grassetto", function () { runCmd(p.id, "bold"); });
+  wordBtn(bar, "<i>I</i>", "Corsivo", function () { runCmd(p.id, "italic"); });
+  wordBtn(bar, "<u>S</u>", "Sottolineato", function () { runCmd(p.id, "underline"); });
+  wordBtn(bar, "<s>B</s>", "Barrato", function () { runCmd(p.id, "strikeThrough"); });
+  wordBtn(bar, "x²", "Apice", function () { runCmd(p.id, "superscript"); });
+  wordBtn(bar, "x₂", "Pedice", function () { runCmd(p.id, "subscript"); });
   bar.appendChild(sep());
 
   var colorInput = document.createElement("input");
@@ -479,51 +491,87 @@ function buildWordToolbar(p) {
   highlightInput.value = "#fff59d";
   highlightInput.addEventListener("input", function () { applyHighlight(p.id, highlightInput.value); });
   bar.appendChild(highlightInput);
+
+  wordBtn(bar, "⌫", "Cancella formattazione", function () { clearFormatting(p.id); });
   bar.appendChild(sep());
 
-  var tableBtn = document.createElement("button");
-  tableBtn.type = "button";
-  tableBtn.className = "word-btn";
-  tableBtn.title = "Inserisci tabella";
-  tableBtn.textContent = "▦ Tabella";
-  tableBtn.addEventListener("click", function () { insertTable(p.id); });
-  bar.appendChild(tableBtn);
+  /* Allineamento */
+  wordBtn(bar, "◧", "Allinea a sinistra", function () { runCmd(p.id, "justifyLeft"); });
+  wordBtn(bar, "▣", "Allinea al centro", function () { runCmd(p.id, "justifyCenter"); });
+  wordBtn(bar, "◨", "Allinea a destra", function () { runCmd(p.id, "justifyRight"); });
+  wordBtn(bar, "▤", "Giustifica", function () { runCmd(p.id, "justifyFull"); });
   bar.appendChild(sep());
 
-  var linkBtn = document.createElement("button");
-  linkBtn.type = "button";
-  linkBtn.className = "word-btn";
-  linkBtn.title = "Trasforma il testo selezionato in un link";
-  linkBtn.textContent = "🔗 Link";
-  linkBtn.addEventListener("click", function () { insertTextLink(p.id); });
-  bar.appendChild(linkBtn);
-
-  var unlinkBtn = document.createElement("button");
-  unlinkBtn.type = "button";
-  unlinkBtn.className = "word-btn";
-  unlinkBtn.title = "Rimuovi il link dal testo selezionato";
-  unlinkBtn.textContent = "🚫 Link";
-  unlinkBtn.addEventListener("click", function () { removeTextLink(p.id); });
-  bar.appendChild(unlinkBtn);
+  /* Elenchi e rientro */
+  wordBtn(bar, "☰•", "Elenco puntato", function () { runCmd(p.id, "insertUnorderedList"); });
+  wordBtn(bar, "☰1", "Elenco numerato", function () { runCmd(p.id, "insertOrderedList"); });
+  wordBtn(bar, "⇤", "Diminuisci rientro", function () { runCmd(p.id, "outdent"); });
+  wordBtn(bar, "⇥", "Aumenta rientro", function () { runCmd(p.id, "indent"); });
   bar.appendChild(sep());
 
+  /* Inserimenti */
+  wordBtn(bar, "🖼 Da link", "Inserisci immagine da link", function () { insertImageByUrl(p.id); });
+  wordBtn(bar, "📤 Carica", "Carica immagine dal dispositivo", function () { uploadImageFile(p.id); });
+  wordBtn(bar, "▦ Tabella", "Inserisci tabella", function () { insertTable(p.id); });
+  wordBtn(bar, "🔗 Link", "Trasforma il testo selezionato in un link", function () { insertTextLink(p.id); });
+  wordBtn(bar, "🚫 Link", "Rimuovi il link dal testo selezionato", function () { removeTextLink(p.id); });
+  wordBtn(bar, "―", "Inserisci linea orizzontale", function () { runCmd(p.id, "insertHorizontalRule"); });
+  bar.appendChild(sep());
+
+  /* Immagine selezionata */
   [["img-sm", "Immagine piccola", "S"], ["img-md", "Immagine media", "M"], ["img-lg", "Immagine grande", "L"]].forEach(function (c) {
-    var b = document.createElement("button");
-    b.type = "button"; b.className = "word-btn"; b.title = c[1]; b.textContent = c[2];
-    b.addEventListener("click", function () { setImageSize(c[0]); });
-    bar.appendChild(b);
+    wordBtn(bar, c[2], c[1], function () { setImageSize(c[0]); });
   });
   [["img-left", "Immagine a sinistra", "◧"], ["img-center", "Immagine al centro", "▣"], ["img-right", "Immagine a destra", "◨"]].forEach(function (c) {
-    var b = document.createElement("button");
-    b.type = "button"; b.className = "word-btn"; b.title = c[1]; b.textContent = c[2];
-    b.addEventListener("click", function () { setImageAlign(c[0]); });
-    bar.appendChild(b);
+    wordBtn(bar, c[2], c[1], function () { setImageAlign(c[0]); });
   });
+  bar.appendChild(sep());
+
+  /* Tabella selezionata */
+  wordBtn(bar, "＋⭣", "Aggiungi riga", function () { tableAction(p.id, "add-row"); });
+  wordBtn(bar, "－⭣", "Elimina riga", function () { tableAction(p.id, "del-row"); });
+  wordBtn(bar, "＋⭢", "Aggiungi colonna", function () { tableAction(p.id, "add-col"); });
+  wordBtn(bar, "－⭢", "Elimina colonna", function () { tableAction(p.id, "del-col"); });
+  wordBtn(bar, "🗑 Tabella", "Elimina tabella", function () { tableAction(p.id, "del-table"); });
+  bar.appendChild(sep());
+
+  /* Trova e sostituisci, esportazioni */
+  wordBtn(bar, "🔍 Trova/sostituisci", "Trova e sostituisci nel testo", function () { findReplace(p.id); });
+  wordBtn(bar, "⬇ Word", "Scarica come documento Word (.docx)", function (e) { exportProcedureDocx(p, e.currentTarget); });
 
   return bar;
 }
 
 var selectedImage = null;
+
+function selectImage(img) {
+  if (selectedImage && selectedImage !== img) selectedImage.classList.remove("img-selected");
+  selectedImage = img;
+  img.classList.add("img-selected");
+}
+
+function deselectImage() {
+  if (selectedImage) selectedImage.classList.remove("img-selected");
+  selectedImage = null;
+}
+
+function cleanEditorHtml(editor) {
+  var clone = editor.cloneNode(true);
+  clone.querySelectorAll(".img-selected").forEach(function (im) { im.classList.remove("img-selected"); });
+  return clone.innerHTML;
+}
+
+function saveBody(procId, editor, delay) {
+  debouncedUpdate("procedures", procId, "bodyHtml", cleanEditorHtml(editor), delay);
+  touchMeta();
+}
+
+function updateWordCount(editor, el) {
+  if (!el) return;
+  var text = (editor.textContent || "").trim();
+  var words = text ? text.split(/\s+/).length : 0;
+  el.textContent = words + " parole · " + (editor.textContent || "").length + " caratteri";
+}
 
 function applyTextColor(procId, color) {
   if (!unlocked) return;
@@ -532,8 +580,7 @@ function applyTextColor(procId, color) {
   if (!editor) return;
   editor.focus();
   document.execCommand("foreColor", false, color);
-  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
-  touchMeta();
+  saveBody(procId, editor, 0);
 }
 
 function applyHighlight(procId, color) {
@@ -543,8 +590,18 @@ function applyHighlight(procId, color) {
   if (!editor) return;
   editor.focus();
   if (!document.execCommand("hiliteColor", false, color)) document.execCommand("backColor", false, color);
-  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
-  touchMeta();
+  saveBody(procId, editor, 0);
+}
+
+function clearFormatting(procId) {
+  if (!unlocked) return;
+  var card = document.querySelector('.proc[data-id="' + procId + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  editor.focus();
+  document.execCommand("removeFormat", false, null);
+  document.execCommand("unlink", false, null);
+  saveBody(procId, editor, 0);
 }
 
 function insertTable(procId) {
@@ -564,8 +621,52 @@ function insertTable(procId) {
   html += "</table><p><br></p>";
   editor.focus();
   document.execCommand("insertHTML", false, html);
-  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
-  touchMeta();
+  saveBody(procId, editor, 0);
+}
+
+function getCurrentCell(editor) {
+  var sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  var node = sel.getRangeAt(0).startContainer;
+  if (node.nodeType === 3) node = node.parentNode;
+  while (node && node !== editor) {
+    if (node.tagName === "TD" || node.tagName === "TH") return node;
+    node = node.parentNode;
+  }
+  return null;
+}
+
+function tableAction(procId, action) {
+  if (!unlocked) return;
+  var card = document.querySelector('.proc[data-id="' + procId + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  var cell = getCurrentCell(editor);
+  if (!cell) { alert("Clicca prima dentro una cella della tabella."); return; }
+  var table = cell.closest("table");
+  var row = cell.closest("tr");
+  var cellIndex = Array.prototype.indexOf.call(row.children, cell);
+  var rowIndex = Array.prototype.indexOf.call(table.rows, row);
+
+  if (action === "add-row") {
+    var newRow = table.insertRow(rowIndex + 1);
+    for (var i = 0; i < row.children.length; i++) { var td = document.createElement("td"); td.innerHTML = "&nbsp;"; newRow.appendChild(td); }
+  } else if (action === "del-row") {
+    if (table.rows.length > 1) table.deleteRow(rowIndex); else alert("La tabella deve avere almeno una riga.");
+  } else if (action === "add-col") {
+    Array.prototype.forEach.call(table.rows, function (r) {
+      var td = document.createElement(r.parentNode.tagName === "THEAD" ? "th" : "td");
+      td.innerHTML = "&nbsp;";
+      r.insertBefore(td, r.children[cellIndex + 1] || null);
+    });
+  } else if (action === "del-col") {
+    if (row.children.length > 1) {
+      Array.prototype.forEach.call(table.rows, function (r) { if (r.children[cellIndex]) r.removeChild(r.children[cellIndex]); });
+    } else alert("La tabella deve avere almeno una colonna.");
+  } else if (action === "del-table") {
+    if (confirm("Eliminare l'intera tabella?")) table.remove();
+  }
+  saveBody(procId, editor, 0);
 }
 
 function insertTextLink(procId) {
@@ -577,8 +678,7 @@ function insertTextLink(procId) {
   if (!url) return;
   editor.focus();
   document.execCommand("createLink", false, url);
-  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
-  touchMeta();
+  saveBody(procId, editor, 0);
 }
 
 function removeTextLink(procId) {
@@ -588,8 +688,37 @@ function removeTextLink(procId) {
   if (!editor) return;
   editor.focus();
   document.execCommand("unlink", false, null);
-  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
-  touchMeta();
+  saveBody(procId, editor, 0);
+}
+
+function findReplace(procId) {
+  if (!unlocked) return;
+  var card = document.querySelector('.proc[data-id="' + procId + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  var find = prompt("Trova:");
+  if (!find) return;
+  var replace = prompt("Sostituisci con:", "");
+  if (replace === null) return;
+  var re = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  var walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+  var textNodes = [];
+  var node;
+  while ((node = walker.nextNode())) textNodes.push(node);
+  var count = 0;
+  textNodes.forEach(function (tn) {
+    re.lastIndex = 0;
+    var matches = tn.nodeValue.match(re);
+    if (matches) {
+      count += matches.length;
+      tn.nodeValue = tn.nodeValue.replace(re, replace);
+    }
+  });
+  if (count === 0) { alert("Nessuna corrispondenza trovata."); return; }
+  saveBody(procId, editor, 0);
+  var wc = card.querySelector(".word-count");
+  updateWordCount(editor, wc);
+  alert(count + (count === 1 ? " sostituzione effettuata." : " sostituzioni effettuate."));
 }
 
 function setImageSize(cls) {
@@ -612,8 +741,7 @@ function saveImageChange() {
   var card = editor.closest(".proc");
   var procId = card && card.dataset.id;
   if (!procId) return;
-  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
-  touchMeta();
+  saveBody(procId, editor, 0);
 }
 
 function sep() { var s = document.createElement("span"); s.className = "word-sep"; return s; }
@@ -625,8 +753,7 @@ function runCmd(procId, cmd, arg) {
   if (!editor) return;
   editor.focus();
   document.execCommand(cmd, false, arg || null);
-  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
-  touchMeta();
+  saveBody(procId, editor, 0);
 }
 
 function insertImageByUrl(procId) {
@@ -638,8 +765,189 @@ function insertImageByUrl(procId) {
   if (!url) return;
   editor.focus();
   document.execCommand("insertImage", false, url);
-  debouncedUpdate("procedures", procId, "bodyHtml", editor.innerHTML, 0);
-  touchMeta();
+  saveBody(procId, editor, 0);
+}
+
+var pendingImageProcId = null;
+var procImgFileInput = document.getElementById("proc-img-file");
+
+function uploadImageFile(procId) {
+  if (!unlocked) return;
+  pendingImageProcId = procId;
+  procImgFileInput.value = "";
+  procImgFileInput.click();
+}
+
+if (procImgFileInput) {
+  procImgFileInput.addEventListener("change", function () {
+    var file = procImgFileInput.files[0];
+    var procId = pendingImageProcId;
+    pendingImageProcId = null;
+    if (!file || !procId) return;
+    if (file.size > 8 * 1024 * 1024) { alert("Immagine troppo grande (max 8MB)."); return; }
+    var card = document.querySelector('.proc[data-id="' + procId + '"]');
+    var editor = card && card._editor;
+    if (!editor) return;
+    var safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    var path = "procedures/" + procId + "/" + Date.now() + "_" + safeName;
+    var fileRef = storageRef(storage, path);
+    uploadBytes(fileRef, file).then(function () {
+      return getDownloadURL(fileRef);
+    }).then(function (url) {
+      editor.focus();
+      document.execCommand("insertImage", false, url);
+      saveBody(procId, editor, 0);
+    }).catch(function (e) {
+      console.error(e);
+      alert("Caricamento immagine non riuscito: " + (e && e.message ? e.message : e));
+    });
+  });
+}
+
+/* ---------------- Esportazione Word (.docx) ---------------- */
+
+function docxRunsFromNode(node, fmt, docx) {
+  var runs = [];
+  fmt = fmt || {};
+  node.childNodes.forEach(function (child) {
+    if (child.nodeType === 3) {
+      if (child.nodeValue) runs.push(new docx.TextRun(Object.assign({ text: child.nodeValue }, fmt)));
+      return;
+    }
+    if (child.nodeType !== 1) return;
+    var tag = child.tagName;
+    var nextFmt = Object.assign({}, fmt);
+    if (tag === "B" || tag === "STRONG") nextFmt.bold = true;
+    if (tag === "I" || tag === "EM") nextFmt.italics = true;
+    if (tag === "U") nextFmt.underline = {};
+    if (tag === "S" || tag === "STRIKE") nextFmt.strike = true;
+    if (tag === "BR") { runs.push(new docx.TextRun({ text: "", break: 1 })); return; }
+    runs = runs.concat(docxRunsFromNode(child, nextFmt, docx));
+  });
+  return runs;
+}
+
+function docxParagraphsFromList(listEl, docx, ordered, level) {
+  var out = [];
+  level = level || 0;
+  Array.prototype.forEach.call(listEl.children, function (li) {
+    if (li.tagName !== "LI") return;
+    var directRuns = [];
+    var subLists = [];
+    li.childNodes.forEach(function (child) {
+      if (child.nodeType === 1 && (child.tagName === "UL" || child.tagName === "OL")) {
+        subLists.push(child);
+      } else {
+        var wrap = document.createElement("span");
+        wrap.appendChild(child.cloneNode(true));
+        directRuns = directRuns.concat(docxRunsFromNode(wrap, {}, docx));
+      }
+    });
+    out.push(new docx.Paragraph({
+      bullet: ordered ? undefined : { level: level },
+      numbering: ordered ? { reference: "proc-numbering", level: level } : undefined,
+      children: directRuns.length ? directRuns : [new docx.TextRun("")]
+    }));
+    subLists.forEach(function (sl) {
+      out = out.concat(docxParagraphsFromList(sl, docx, sl.tagName === "OL", level + 1));
+    });
+  });
+  return out;
+}
+
+function fetchImageArrayBuffer(url) {
+  return fetch(url).then(function (r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.arrayBuffer();
+  });
+}
+
+function docxBlockFromTable(tableEl, docx) {
+  var rows = [];
+  Array.prototype.forEach.call(tableEl.rows, function (tr) {
+    var cells = [];
+    Array.prototype.forEach.call(tr.children, function (td) {
+      cells.push(new docx.TableCell({
+        children: [new docx.Paragraph({ children: docxRunsFromNode(td, {}, docx) })],
+        width: { size: Math.floor(9000 / Math.max(tr.children.length, 1)), type: docx.WidthType.DXA }
+      }));
+    });
+    rows.push(new docx.TableRow({ children: cells }));
+  });
+  if (!rows.length) return null;
+  return new docx.Table({
+    rows: rows,
+    width: { size: 9000, type: docx.WidthType.DXA }
+  });
+}
+
+async function exportProcedureDocx(p, btn) {
+  var card = document.querySelector('.proc[data-id="' + p.id + '"]');
+  var editor = card && card._editor;
+  if (!editor) return;
+  if (btn) { btn.disabled = true; btn.dataset.origText = btn.textContent; btn.textContent = "⏳ …"; }
+  try {
+    var docx = await import("https://esm.sh/docx@8.5.0?bundle");
+    var blocks = [];
+    blocks.push(new docx.Paragraph({ text: p.title || "Procedura", heading: docx.HeadingLevel.TITLE }));
+    if (p.desc) blocks.push(new docx.Paragraph({ text: p.desc, italics: true }));
+
+    var children = Array.prototype.slice.call(editor.children);
+    for (var i = 0; i < children.length; i++) {
+      var el = children[i];
+      var tag = el.tagName;
+      if (tag === "H1" || tag === "H2" || tag === "H3" || tag === "H4") {
+        var lvl = { H1: docx.HeadingLevel.HEADING_1, H2: docx.HeadingLevel.HEADING_2, H3: docx.HeadingLevel.HEADING_3, H4: docx.HeadingLevel.HEADING_4 }[tag];
+        blocks.push(new docx.Paragraph({ children: docxRunsFromNode(el, {}, docx), heading: lvl }));
+      } else if (tag === "P" || tag === "DIV") {
+        blocks.push(new docx.Paragraph({ children: docxRunsFromNode(el, {}, docx) }));
+      } else if (tag === "BLOCKQUOTE") {
+        blocks.push(new docx.Paragraph({ children: docxRunsFromNode(el, { italics: true }, docx), indent: { left: 480 } }));
+      } else if (tag === "UL" || tag === "OL") {
+        blocks = blocks.concat(docxParagraphsFromList(el, docx, tag === "OL", 0));
+      } else if (tag === "TABLE") {
+        var t = docxBlockFromTable(el, docx);
+        if (t) blocks.push(t);
+      } else if (tag === "HR") {
+        blocks.push(new docx.Paragraph({ border: { bottom: { color: "auto", space: 1, style: docx.BorderStyle.SINGLE, size: 6 } } }));
+      } else if (tag === "IMG") {
+        try {
+          var buf = await fetchImageArrayBuffer(el.src);
+          var naturalW = el.naturalWidth || 500;
+          var naturalH = el.naturalHeight || 300;
+          var maxW = 500;
+          var w = Math.min(maxW, naturalW);
+          var h = naturalW ? Math.round(w * (naturalH / naturalW)) : 300;
+          blocks.push(new docx.Paragraph({
+            children: [new docx.ImageRun({ data: buf, transformation: { width: w, height: h }, type: "png" })]
+          }));
+        } catch (imgErr) {
+          console.error("Immagine non esportabile:", imgErr);
+          blocks.push(new docx.Paragraph({ children: [new docx.TextRun({ text: "[Immagine non disponibile per l'export]", italics: true })] }));
+        }
+      }
+    }
+
+    var doc = new docx.Document({
+      numbering: { config: [{ reference: "proc-numbering", levels: [0, 1, 2].map(function (lvl) { return { level: lvl, format: "decimal", text: "%" + (lvl + 1) + ".", alignment: "start" }; }) }] },
+      sections: [{ children: blocks }]
+    });
+
+    var blob = await docx.Packer.toBlob(doc);
+    var a = document.createElement("a");
+    var blobUrl = URL.createObjectURL(blob);
+    a.href = blobUrl;
+    a.download = (p.title || "procedura").replace(/[^a-zA-Z0-9 _-]/g, "").trim() + ".docx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(blobUrl); }, 4000);
+  } catch (e) {
+    console.error(e);
+    alert("Esportazione Word non riuscita: " + (e && e.message ? e.message : e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.origText || "⬇ Word"; }
+  }
 }
 
 function buildAttachmentRow(procId, att) {
@@ -694,7 +1002,7 @@ function printProcedure(card) {
     "@media print {" +
     sel + ", " + sel + " * { visibility: visible !important; }" +
     sel + " { position: absolute !important; top:0 !important; left:0 !important; width:100% !important; max-width:none !important; max-height:none !important; transform:none !important; overflow:visible !important; background:#fff !important; color:#1a1a1a !important; border:none !important; box-shadow:none !important; padding:0 !important; }" +
-    sel + " .detail-close-x, " + sel + " .detail-pdf-btn, " + sel + " .icon-btn, " + sel + " .add-btn, " + sel + " .word-toolbar { display:none !important; }" +
+    sel + " .detail-close-x, " + sel + " .detail-pdf-btn, " + sel + " .icon-btn, " + sel + " .add-btn, " + sel + " .word-toolbar, " + sel + " .word-count { display:none !important; }" +
     sel + " .chip { border:1px solid #999 !important; color:#1a1a1a !important; background:transparent !important; }" +
     sel + " .word-page { border:none !important; padding:0 !important; color:#1a1a1a !important; }" +
     "}";

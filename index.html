@@ -82,6 +82,10 @@
       <div class="stat-label">Collegamenti</div>
     </button>
     <div class="stat">
+      <div class="stat-value mono" id="stat-forms">0</div>
+      <div class="stat-label">Moduli</div>
+    </div>
+    <div class="stat">
       <div class="stat-value mono" id="stat-updated">—</div>
       <div class="stat-label">Ultimo aggiornamento</div>
     </div>
@@ -143,8 +147,20 @@
           </table>
         </div>
       </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Moduli</h2>
+          <div class="section-head-right">
+            <button type="button" class="add-btn" id="add-form">+ Aggiungi</button>
+          </div>
+        </div>
+        <div class="form-list" id="form-list"></div>
+      </section>
     </div>
   </div>
+
+  <input type="file" id="proc-img-file" accept="image/*" hidden>
 
   <div class="empty" id="empty-state">Nessun risultato per questa ricerca.</div>
 

@@ -677,6 +677,34 @@
   .word-page img.img-center { display: block; margin: 8px auto; float: none; }
   .word-page img.img-right { float: right; display: inline; margin: 4px 0 8px 14px; }
 
+  .word-page img.img-selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .word-page h1 { font-size: 22px; font-weight: 800; margin: 0 0 12px; }
+  .word-page h2 { font-size: 19px; font-weight: 700; margin: 0 0 10px; }
+  .word-page h4 { font-size: 15px; font-weight: 700; margin: 0 0 8px; }
+  .word-page blockquote {
+    margin: 0 0 10px;
+    padding: 4px 14px;
+    border-left: 3px solid var(--accent);
+    color: #4a4a4a;
+    font-style: italic;
+  }
+  .word-page hr { border: none; border-top: 1px solid #ccc; margin: 14px 0; }
+
+  .word-count {
+    display: none;
+    text-align: right;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    padding: 4px 2px 0;
+  }
+
+  body.edit-unlocked .word-count { display: block; }
+
+  .word-font { width: 118px; }
+  .word-size { width: 90px; }
+
   .word-page table {
     border-collapse: collapse;
     width: 100%;
